@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="タイムカード">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<title>タイムカード</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{
+  --bg:#EEF1F4; --card:#FFFFFF; --ink:#1B2433; --sub:#5B6779; --line:#CBD3DD;
+  --in:#2F5BD3; --out:#1B2433; --brk:#B7791F; --sat:#2F5BD3; --sun:#C0392B;
+  --soft:#E3E8EE; --onin:#FFFFFF; color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#141A23; --card:#1D2531; --ink:#E6EAF0; --sub:#9AA6B6; --line:#334052;
+    --in:#7C9BF0; --out:#E6EAF0; --brk:#E0A64A; --sat:#7C9BF0; --sun:#F08072;
+    --soft:#263040; --onin:#101722; color-scheme:dark;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:"Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic UI","Yu Gothic","Noto Sans JP",system-ui,sans-serif;
+  font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased}
+.wrap{max-width:720px;margin:0 auto;padding:20px 16px 48px}
+button,select,input{font:inherit;color:inherit}
+button{cursor:pointer}
+button:focus-visible,input:focus-visible,select:focus-visible,tr:focus-visible{outline:3px solid var(--in);outline-offset:2px}
+h2{font-size:16px;margin:0 0 10px;font-weight:600}
+
+.clock{padding:8px 4px 18px}
+.date{color:var(--sub);font-size:15px;letter-spacing:.04em}
+.time{font-size:clamp(56px,16vw,104px);font-weight:300;line-height:1;letter-spacing:-.02em;font-variant-numeric:tabular-nums;margin-top:4px}
+.time small{font-size:.32em;color:var(--sub);margin-left:.15em;font-weight:400}
+.compact .time{font-size:40px}
+
+.lead{font-size:17px;margin:4px 2px 12px}
+.names{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.name{border:2px solid var(--line);background:var(--card);border-radius:14px;padding:20px 14px;font-size:19px;font-weight:600;text-align:left}
+.name:hover{border-color:var(--in)}
+.foot{margin-top:28px;display:flex;justify-content:space-between;align-items:center}
+.link{border:none;background:none;color:var(--sub);font-size:13px;text-decoration:underline;padding:6px 2px}
+.link.armed{color:var(--sun);font-weight:600}
+.empty{color:var(--sub);font-size:14px;margin:4px 0}
+
+/* pin */
+.pin{max-width:320px;margin:0 auto;text-align:center}
+.pin .who{font-size:20px;font-weight:600}
+.dots{display:flex;justify-content:center;gap:14px;margin:18px 0 6px}
+.dots i{width:14px;height:14px;border-radius:50%;border:2px solid var(--ink)}
+.dots i.on{background:var(--ink)}
+.err{color:var(--sun);font-size:14px;min-height:1.6em;margin:0}
+.pad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:10px}
+.pad button{background:var(--card);border:1px solid var(--line);border-radius:14px;height:64px;font-size:24px;font-variant-numeric:tabular-nums}
+.pad button.fn{font-size:14px;color:var(--sub)}
+
+/* staff */
+.who-bar{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.who-bar strong{font-size:20px}
+.status{display:inline-flex;align-items:center;gap:8px;font-size:15px}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--line)}
+.status.working .dot{background:var(--in)} .status.break .dot{background:var(--brk)}
+.btn2{border:1px solid var(--line);background:var(--card);border-radius:10px;padding:8px 14px;font-size:14px}
+.punches{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+.pb{border:2px solid var(--line);background:var(--card);border-radius:14px;padding:18px 12px;font-size:19px;font-weight:600;text-align:left;display:flex;flex-direction:column;gap:2px;transition:transform .08s}
+.pb span{font-size:12px;font-weight:400;color:var(--sub)}
+.pb:active:not(:disabled){transform:scale(.98)}
+.pb:disabled{opacity:.35;cursor:not-allowed}
+.pb.in:not(:disabled){border-color:var(--in);color:var(--in)}
+.pb.bs:not(:disabled),.pb.be:not(:disabled){border-color:var(--brk);color:var(--brk)}
+.pb.out:not(:disabled){border-color:var(--out);background:var(--out);color:var(--bg)}
+.pb.out:not(:disabled) span{color:var(--bg);opacity:.75}
+.msg{min-height:1.6em;margin:10px 2px 0;color:var(--sub);font-size:14px}
+.msg.ok{color:var(--ink);font-weight:600}
+
+.panel{margin-top:20px;background:var(--card);border-radius:14px;padding:16px 18px}
+.sum{display:flex;gap:28px;margin-bottom:10px}
+.sum div{font-size:13px;color:var(--sub)}
+.sum b{display:block;font-size:26px;font-weight:500;color:var(--ink);font-variant-numeric:tabular-nums}
+.log{list-style:none;margin:0;padding:0;border-top:1px solid var(--line)}
+.log li{display:flex;gap:14px;padding:7px 0;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}
+.log li .t{width:4.5em;font-weight:600}
+.log .k-in{color:var(--in)} .log .k-bs,.log .k-be{color:var(--brk)}
+
+/* month */
+.month{margin-top:26px}
+.mhead{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.mnav{display:flex;align-items:center;gap:4px}
+.mnav button{border:1px solid var(--line);background:var(--card);border-radius:8px;width:36px;height:36px;font-size:16px}
+.mnav strong{min-width:7.5em;text-align:center;font-size:17px;font-variant-numeric:tabular-nums}
+.pri{border:none;background:var(--in);color:var(--onin);border-radius:10px;padding:9px 14px;font-weight:600;font-size:14px}
+.totals{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+.totals div{background:var(--card);border-radius:12px;padding:10px 12px;font-size:12px;color:var(--sub)}
+.totals b{display:block;font-size:22px;font-weight:500;color:var(--ink);font-variant-numeric:tabular-nums}
+.tbl{background:var(--card);border-radius:14px;overflow:hidden}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;font-size:14px}
+th{font-weight:500;font-size:12px;color:var(--sub);text-align:right;padding:8px 10px;border-bottom:1px solid var(--line)}
+th:first-child,td:first-child{text-align:left}
+td{padding:7px 10px;text-align:right;border-bottom:1px solid var(--soft);vertical-align:top}
+td small{display:block;font-size:11px;color:var(--sub);line-height:1.2}
+tr.row{cursor:pointer} tr.row:hover td{background:var(--soft)}
+tr.sat td:first-child{color:var(--sat)} tr.sun td:first-child{color:var(--sun)}
+td.mute{color:var(--line)}
+.hint{font-size:12px;color:var(--sub);margin:8px 2px 0}
+
+/* admin */
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:16px}
+.tabs button{border:none;background:none;padding:10px 14px;font-size:15px;color:var(--sub);border-bottom:3px solid transparent;margin-bottom:-1px}
+.tabs button.on{color:var(--ink);border-color:var(--in);font-weight:600}
+.slist{list-style:none;margin:0 0 16px;padding:0;background:var(--card);border-radius:14px}
+.slist li{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--soft);flex-wrap:wrap}
+.slist li:last-child{border:none}
+.slist .nm{flex:1;font-weight:600;min-width:6em}
+.slist .sm{border:1px solid var(--line);background:none;border-radius:8px;padding:5px 10px;font-size:13px}
+.slist .sm.danger{color:var(--sun)} .slist .sm.danger.armed{background:var(--sun);color:#fff;border-color:var(--sun)}
+.form{background:var(--card);border-radius:14px;padding:14px;display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end}
+.form label{display:flex;flex-direction:column;font-size:12px;color:var(--sub);gap:4px}
+input[type=text],input[type=password],select{font-size:16px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)}
+input.pinin{width:7em;letter-spacing:.3em}
+.rules{background:var(--card);border-radius:14px;padding:6px 14px}
+.rules .r{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--soft);gap:10px}
+.rules .r:last-child{border:none}
+.warn{font-size:13px;color:var(--sub);background:var(--soft);border-radius:10px;padding:10px 12px;margin:12px 0 0;line-height:1.7}
+.sec{margin-top:24px}
+
+/* modal */
+.ov{position:fixed;inset:0;background:rgba(10,14,20,.5);display:none;align-items:flex-end;justify-content:center;z-index:10}
+.ov.open{display:flex}
+.sheet{background:var(--card);width:100%;max-width:520px;border-radius:18px 18px 0 0;padding:20px 18px 24px;max-height:90vh;overflow:auto}
+@media(min-width:600px){.ov{align-items:center}.sheet{border-radius:18px}}
+.sheet h3{margin:0 0 14px;font-size:17px}
+.f{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.f>label{width:4.5em;font-size:14px;color:var(--sub)}
+input[type=time]{font-size:17px;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font-variant-numeric:tabular-nums}
+.brow{display:flex;align-items:center;gap:6px;margin-bottom:8px}
+.brow .x{border:none;background:none;color:var(--sun);font-size:13px;padding:6px}
+.ghost{border:1px dashed var(--line);background:none;border-radius:8px;padding:7px 12px;font-size:14px;color:var(--brk)}
+.acts{display:flex;gap:8px;margin-top:18px;flex-wrap:wrap}
+.acts .save{flex:1;border:none;background:var(--in);color:var(--onin);border-radius:10px;padding:12px;font-weight:600}
+.acts .cancel{border:1px solid var(--line);background:none;border-radius:10px;padding:12px 16px}
+.acts .del{border:none;background:none;color:var(--sun);font-size:13px;padding:12px 4px;margin-right:auto}
+.note{font-size:12px;color:var(--sub);margin:4px 0 0}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <section class="clock" id="clock">
+    <div class="date" id="date"></div>
+    <div class="time" id="time">--:--</div>
+  </section>
+  <main id="app"><p class="empty">読み込み中…</p></main>
+</div>
+
+<div class="ov" id="ov">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="eTitle">
+    <h3 id="eTitle"></h3>
+    <div class="f"><label for="eIn">出勤</label><input type="time" id="eIn"></div>
+    <div class="f"><label for="eOut">退勤</label><input type="time" id="eOut"></div>
+    <div class="f" style="align-items:flex-start"><label>休憩</label><div id="eBreaks" style="flex:1"></div></div>
+    <button class="ghost" id="eAdd">＋ 休憩を追加</button>
+    <p class="note">打刻した時刻をそのまま入力してください。15分単位などの丸めは集計時に自動で適用されます。退勤を空欄にすると勤務中として扱います。</p>
+    <p class="note" id="eErr" role="alert" style="color:var(--sun);font-size:13px"></p>
+    <div class="acts">
+      <button class="del" id="eDel">この日の記録を削除</button>
+      <button class="cancel" id="eCancel">キャンセル</button>
+      <button class="save" id="eSave">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const KEY='timecard-v2', OLDKEY='timecard-v1';
+const WD=['日','月','火','水','木','金','土'];
+const DIRS={none:'そのまま',floor:'切り捨て',ceil:'切り上げ',round:'四捨五入'};
+const KINDS={in:'出勤',out:'退勤',bs:'休憩開始',be:'休憩終了'};
+let data={staff:[],adminPin:null,rules:{unit:15,in:'ceil',out:'floor',bs:'none',be:'none'},records:{}};
+
+let screen='home', me=null, pinFor=null, pinBuf='', pinErr='', fails=0, lockUntil=0;
+let view=new Date(); view.setDate(1);
+let adminTab='sheet', adminSid=null, pinEditId=null, armed=null, armT=null;
+let msg='', msgOk=false, autoHome=0, lastAct=Date.now(), edit=null;
+
+const $=id=>document.getElementById(id);
+const app=()=>$('app');
+const pad=n=>String(n).padStart(2,'0');
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const dk=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const hm=ts=>{const d=new Date(ts);return `${pad(d.getHours())}:${pad(d.getMinutes())}`;};
+const dur=ms=>{const m=Math.max(0,Math.floor(ms/60000));return `${Math.floor(m/60)}:${pad(m%60)}`;};
+const keyDate=k=>{const [y,m,d]=k.split('-').map(Number);return new Date(y,m-1,d);};
+const staffName=id=>(data.staff.find(s=>s.id===id)||{}).name||'';
+const recs=sid=>(data.records[sid]=data.records[sid]||{});
+
+async function hash(s){
+  try{const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode('tc:'+s));return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('');}
+  catch(e){let h=7;for(const c of s)h=(h*31+c.charCodeAt(0))|0;return 'f'+h;}
+}
+
+/* ---------- storage (this iPad only) ---------- */
+async function load(){
+  try{const v=localStorage.getItem(KEY); if(v) data=Object.assign(data,JSON.parse(v));}catch(e){}
+  try{if(navigator.storage&&navigator.storage.persist) navigator.storage.persist();}catch(e){}
+  render();
+}
+async function save(){
+  try{localStorage.setItem(KEY,JSON.stringify(data)); return true;}
+  catch(e){setMsg('保存に失敗しました。Safariのプライベートブラウズでは保存できません。通常のタブかホーム画面のアイコンから開いてください。');return false;}
+}
+function backupOut(){
+  const n=new Date(), name=`タイムカード_バックアップ_${n.getFullYear()}${pad(n.getMonth()+1)}${pad(n.getDate())}.json`;
+  const blob=new Blob([JSON.stringify({app:'timecard',v:2,savedAt:n.toISOString(),data},null,1)],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),5000);
+  data.lastBackup=Date.now(); save(); setMsg(`${name} を保存しました。「ファイル」アプリなど、iPadの外にも残してください。`,true); render();
+}
+function backupIn(file){
+  const fr=new FileReader();
+  fr.onload=async()=>{
+    try{
+      const o=JSON.parse(fr.result); if(o.app!=='timecard'||!o.data||!o.data.staff) throw 0;
+      if(armed!=='restore'){pendingRestore=o.data;armed='restore';setMsg(`${o.data.staff.length}人分の記録があります。もう一度「バックアップから戻す」を押すと、この端末の記録を置き換えます。`);return render();}
+    }catch(e){setMsg('このファイルはタイムカードのバックアップではありません。');return render();}
+  };
+  fr.readAsText(file);
+}
+let pendingRestore=null;
+function setMsg(t,ok=false){msg=t;msgOk=ok;}
+
+/* ---------- rounding & calc ---------- */
+function R(ts,kind){
+  const u=+data.rules.unit, dir=data.rules[kind];
+  if(!u||dir==='none') return ts;
+  const d=new Date(ts); d.setSeconds(0,0);
+  const m=d.getHours()*60+d.getMinutes();
+  const n=dir==='floor'?Math.floor(m/u)*u:dir==='ceil'?Math.ceil(m/u)*u:Math.round(m/u)*u;
+  d.setHours(0,n,0,0); return d.getTime();
+}
+function calc(r,now=Date.now()){
+  if(!r||!r.in) return null;
+  const a=R(r.in,'in'), z=r.out?Math.max(a,R(r.out,'out')):Math.max(a,now);
+  let br=0;
+  for(const b of r.breaks||[]){
+    const s=R(b.s,'bs'), e=b.e?R(b.e,'be'):(r.out?z:now);
+    br+=Math.max(0,Math.min(e,z)-Math.max(s,a));
+  }
+  return {a,z,br,work:Math.max(0,z-a-br),open:!r.out};
+}
+function openRec(sid){
+  const R_=recs(sid), keys=Object.keys(R_).sort();
+  for(let i=keys.length-1;i>=0;i--){const r=R_[keys[i]]; if(r.in&&!r.out) return {key:keys[i],r};}
+  return null;
+}
+function state(sid){
+  const o=openRec(sid); if(!o) return {s:'off'};
+  const b=o.r.breaks||[], last=b[b.length-1];
+  return {s:last&&!last.e?'break':'working',...o};
+}
+
+/* ---------- render ---------- */
+function render(){
+  $('clock').classList.toggle('compact',screen==='admin');
+  if(!data.adminPin) return renderSetup();
+  ({home:renderHome,pin:renderPin,staff:renderStaff,admin:renderAdmin}[screen]||renderHome)();
+}
+
+function renderSetup(){
+  app().innerHTML=`
+  <h2>はじめに管理者PINを設定してください</h2>
+  <p class="hint" style="margin:0 0 12px">管理者PINは、スタッフの登録、全員の記録の閲覧・修正、Excel出力、丸めルールの設定に使います。</p>
+  <div class="form">
+    <label>管理者PIN（数字4桁）<input type="password" inputmode="numeric" maxlength="4" class="pinin" id="sp1"></label>
+    <label>もう一度<input type="password" inputmode="numeric" maxlength="4" class="pinin" id="sp2"></label>
+    <button class="pri" data-act="setup">設定する</button>
+  </div>
+  <p class="err" id="serr">${esc(msg)}</p>`;
+}
+
+function renderHome(){
+  const names=data.staff.length
+    ? `<div class="names">${data.staff.map(s=>`<button class="name" data-act="pick" data-id="${s.id}">${esc(s.name)}</button>`).join('')}</div>`
+    : `<p class="empty">スタッフが登録されていません。下の「管理者メニュー」から登録してください。</p>`;
+  app().innerHTML=`<p class="lead">名前を選んでください</p>${names}
+  <p class="msg ${msgOk?'ok':''}" role="status">${esc(msg)}</p>
+  <div class="foot"><span></span><button class="link" data-act="admin">管理者メニュー</button></div>`;
+}
+
+function renderPin(){
+  const who=pinFor.type==='admin'?'管理者':staffName(pinFor.id);
+  const locked=Date.now()<lockUntil;
+  app().innerHTML=`<div class="pin">
+    <div class="who">${esc(who)}</div>
+    <div class="hint" style="margin:2px 0 0">PIN（4桁）を入力してください</div>
+    <div class="dots">${[0,1,2,3].map(i=>`<i class="${i<pinBuf.length?'on':''}"></i>`).join('')}</div>
+    <p class="err" role="alert">${locked?`入力の誤りが続いたため、${Math.ceil((lockUntil-Date.now())/1000)}秒お待ちください。`:esc(pinErr)}</p>
+    <div class="pad">
+      ${[1,2,3,4,5,6,7,8,9].map(n=>`<button data-act="key" data-v="${n}" ${locked?'disabled':''}>${n}</button>`).join('')}
+      <button class="fn" data-act="cancel">戻る</button>
+      <button data-act="key" data-v="0" ${locked?'disabled':''}>0</button>
+      <button class="fn" data-act="bksp">1字消す</button>
+    </div></div>`;
+}
+
+function monthRows(sid){
+  const y=view.getFullYear(), m=view.getMonth(), last=new Date(y,m+1,0).getDate(), R_=recs(sid), out=[];
+  for(let d=1;d<=last;d++){const dt=new Date(y,m,d);out.push({dt,k:dk(dt),r:R_[dk(dt)]});}
+  return out;
+}
+function cellT(raw,rounded){return raw==null?'':(hm(raw)+(rounded!=null&&hm(raw)!==hm(rounded)?`<small>計 ${hm(rounded)}</small>`:''));}
+function monthBlock(sid,editable){
+  const now=Date.now(); let days=0,w=0,b=0;
+  const rows=monthRows(sid).map(({dt,k,r})=>{
+    const cls=dt.getDay()===6?'sat':dt.getDay()===0?'sun':'';
+    const label=`${dt.getDate()}日（${WD[dt.getDay()]}）`;
+    const attr=editable?`class="row ${cls}" data-act="row" data-k="${k}" tabindex="0"`:`class="${cls}"`;
+    const c=calc(r,now);
+    if(!c) return `<tr ${attr}><td>${label}</td><td class="mute">–</td><td class="mute">–</td><td class="mute">–</td><td class="mute">–</td></tr>`;
+    days++; b+=c.br; w+=c.work;
+    return `<tr ${attr}><td>${label}</td><td>${cellT(r.in,c.a)}</td><td>${r.out?cellT(r.out,c.z):'勤務中'}</td><td>${dur(c.br)}</td><td>${dur(c.work)}</td></tr>`;
+  }).join('');
+  return `<div class="totals">
+      <div>勤務日数<b>${days}日</b></div><div>勤務時間<b>${dur(w)}</b></div><div>休憩時間<b>${dur(b)}</b></div></div>
+    <div class="tbl"><table><thead><tr><th>日付</th><th>出勤</th><th>退勤</th><th>休憩</th><th>勤務</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <p class="hint">${ruleText()}「計」は丸め後に計算へ使った時刻です。</p>`;
+}
+function ruleText(){
+  const u=+data.rules.unit;
+  if(!u) return '丸めなし（打刻時刻どおり）で計算しています。';
+  return `${u}分単位：`+Object.keys(KINDS).map(k=>`${KINDS[k]}は${DIRS[data.rules[k]]}`).join('、')+'。';
+}
+function mnav(){return `<div class="mnav"><button data-act="mprev" aria-label="前の月">‹</button><strong>${view.getFullYear()}年${view.getMonth()+1}月</strong><button data-act="mnext" aria-label="次の月">›</button></div>`;}
+
+function renderStaff(){
+  const st=state(me), now=Date.now();
+  const label=st.s==='off'?'勤務外':st.s==='working'?`勤務中（${hm(st.r.in)} 出勤）`:`休憩中（${hm(st.r.breaks.at(-1).s)} から）`;
+  const k=st.key||dk(new Date()), r=recs(me)[k], c=calc(r,now), kd=keyDate(k);
+  const items=[];
+  if(r){items.push([r.in,'出勤','in']);(r.breaks||[]).forEach(b=>{items.push([b.s,'休憩開始','bs']);if(b.e)items.push([b.e,'休憩終了','be']);});if(r.out)items.push([r.out,'退勤','out']);}
+  app().innerHTML=`
+  <div class="who-bar"><div><strong>${esc(staffName(me))}</strong><br><span class="status ${st.s==='off'?'':st.s}"><i class="dot"></i>${label}</span></div>
+    <button class="btn2" data-act="logout">終了する</button></div>
+  <div class="punches">
+    <button class="pb in" data-act="punch" data-t="in" ${st.s!=='off'?'disabled':''}>出勤<span>勤務を始める</span></button>
+    <button class="pb out" data-act="punch" data-t="out" ${st.s==='off'?'disabled':''}>退勤<span>勤務を終える</span></button>
+    <button class="pb bs" data-act="punch" data-t="bs" ${st.s!=='working'?'disabled':''}>休憩開始<span>休憩に入る</span></button>
+    <button class="pb be" data-act="punch" data-t="be" ${st.s!=='break'?'disabled':''}>休憩終了<span>勤務に戻る</span></button>
+  </div>
+  <p class="msg ${msgOk?'ok':''}" role="status">${esc(msg)}${autoHome?'　まもなく名前の選択に戻ります。':''}</p>
+  <section class="panel"><h2>${k===dk(new Date())?'今日の記録':`${kd.getMonth()+1}月${kd.getDate()}日からの勤務`}</h2>
+    <div class="sum"><div>勤務時間<b>${c?dur(c.work):'0:00'}</b></div><div>休憩時間<b>${c?dur(c.br):'0:00'}</b></div></div>
+    <ul class="log">${items.length?items.map(([t,l,cl])=>`<li><span class="t k-${cl}">${hm(t)}</span><span>${l}</span></li>`).join(''):'<li class="empty" style="border:none">まだ打刻がありません。「出勤」を押すと記録が始まります。</li>'}</ul>
+  </section>
+  <section class="month"><div class="mhead">${mnav()}</div>${monthBlock(me,false)}
+    <p class="hint">打刻の修正が必要なときは管理者に伝えてください。</p></section>`;
+}
+
+function renderAdmin(){
+  if(!adminSid||!data.staff.find(s=>s.id===adminSid)) adminSid=data.staff[0]?.id||null;
+  const stale=data.staff.length&&(!data.lastBackup||Date.now()-data.lastBackup>35*86400000);
+  const tabs=`<div class="tabs" role="tablist">${[['sheet','勤務表'],['staff','スタッフ'],['rules','ルール']].map(([v,l])=>`<button role="tab" class="${adminTab===v?'on':''}" data-act="tab" data-v="${v}">${l}</button>`).join('')}
+    <span style="flex:1"></span><button class="btn2" style="margin:4px 0" data-act="logout">管理者メニューを閉じる</button></div>`;
+  let body='';
+  if(adminTab==='sheet'){
+    body=data.staff.length?`
+      <div class="mhead"><select data-act="asel" aria-label="スタッフ">${data.staff.map(s=>`<option value="${s.id}" ${s.id===adminSid?'selected':''}>${esc(s.name)}</option>`).join('')}</select>${mnav()}</div>
+      <div class="mhead" style="justify-content:flex-end"><button class="btn2" data-act="export1">このスタッフをExcelに出力</button><button class="pri" data-act="exportAll">全員をExcelに出力</button></div>
+      ${monthBlock(adminSid,true)}<p class="hint">日付をタップすると打刻を修正・追加できます。</p>`
+      :`<p class="empty">「スタッフ」タブからスタッフを登録してください。</p>`;
+  }else if(adminTab==='staff'){
+    body=`<ul class="slist">${data.staff.map(s=>`<li><span class="nm">${esc(s.name)}</span>
+      ${pinEditId===s.id?`<input type="password" inputmode="numeric" maxlength="4" class="pinin" id="np" aria-label="新しいPIN" placeholder="4桁"><button class="sm" data-act="pinSave" data-id="${s.id}">保存</button><button class="sm" data-act="pinCancel">やめる</button>`
+      :`<button class="sm" data-act="pinEdit" data-id="${s.id}">PINを変更</button><button class="sm danger ${armed==='del'+s.id?'armed':''}" data-act="delStaff" data-id="${s.id}">${armed==='del'+s.id?'記録ごと削除する':'削除'}</button>`}</li>`).join('')||'<li class="empty">まだ登録がありません。</li>'}</ul>
+      <div class="form"><label>名前<input type="text" id="nName" maxlength="20"></label>
+        <label>PIN（数字4桁）<input type="password" inputmode="numeric" maxlength="4" class="pinin" id="nPin"></label>
+        <button class="pri" data-act="addStaff">スタッフを追加</button></div>
+      ${data.legacy?'<p class="hint">以前のアプリの打刻記録があります。最初に追加したスタッフの記録として引き継ぎます。</p>':''}`;
+  }else{
+    const sel=(k)=>`<select data-act="rule" data-k="${k}" aria-label="${KINDS[k]}">${Object.entries(DIRS).map(([v,l])=>`<option value="${v}" ${data.rules[k]===v?'selected':''}>${l}</option>`).join('')}</select>`;
+    body=`<div class="rules">
+      <div class="r"><span>丸めの単位</span><select data-act="rule" data-k="unit" aria-label="丸めの単位">${[[0,'丸めない'],[5,'5分'],[10,'10分'],[15,'15分'],[30,'30分']].map(([v,l])=>`<option value="${v}" ${+data.rules.unit===v?'selected':''}>${l}</option>`).join('')}</select></div>
+      ${Object.keys(KINDS).map(k=>`<div class="r"><span>${KINDS[k]}</span>${sel(k)}</div>`).join('')}
+    </div>
+    <p class="hint">例：15分単位で出勤を切り上げると 8:52 → 9:00、退勤を切り捨てると 18:10 → 18:00 として計算します。打刻した時刻はそのまま保存され、変更はすべての月の集計に反映されます。</p>
+    <p class="warn">労働基準法では、1日ごとに勤務時間を切り捨てて賃金を減らす扱いは原則として認められていません（認められているのは1か月の時間外労働などの合計での端数処理）。始業前の時間を労働としない運用で出勤を切り上げる場合なども含め、就業規則と照らして社労士などに確認してから設定することをおすすめします。</p>
+    <div class="sec"><h2>管理者PINの変更</h2><div class="form">
+      <label>新しいPIN<input type="password" inputmode="numeric" maxlength="4" class="pinin" id="ap1"></label>
+      <label>もう一度<input type="password" inputmode="numeric" maxlength="4" class="pinin" id="ap2"></label>
+      <button class="btn2" data-act="adminPin">変更する</button></div></div>
+    <div class="sec"><h2>バックアップ</h2>
+      <p class="hint" style="margin:0 0 10px">記録はこのiPadの中にだけ保存されています。iPadの故障や、Safariのデータ消去に備えて、月に一度はバックアップを保存してください。${data.lastBackup?`前回の保存：${new Date(data.lastBackup).toLocaleDateString('ja-JP')}`:'まだ保存していません。'}</p>
+      <div class="form"><button class="pri" data-act="backupOut">バックアップを保存</button>
+        ${pendingRestore?`<button class="btn2 ${armed==='restore'?'':''}" data-act="restoreGo" style="color:var(--sun);border-color:var(--sun)">バックアップから戻す</button>`
+        :`<label class="btn2" style="flex-direction:row;color:var(--ink);font-size:14px;cursor:pointer">バックアップから戻す<input type="file" accept=".json,application/json" data-act="backupIn" hidden></label>`}</div></div>`;
+  }
+  if(stale&&adminTab!=='rules') body=`<p class="warn" style="margin:0 0 14px">しばらくバックアップを保存していません。「ルール」タブの下から保存できます。</p>`+body;
+  app().innerHTML=tabs+body+`<p class="msg ${msgOk?'ok':''}" role="status">${esc(msg)}</p>`;
+}
+
+/* ---------- actions ---------- */
+async function punch(t){
+  const now=Date.now(), st=state(me), R_=recs(me);
+  if(t==='in'){
+    if(st.s!=='off') return;
+    const k=dk(new Date());
+    if(R_[k]&&R_[k].out){setMsg('今日はすでに退勤済みです。修正は管理者に伝えてください。');return render();}
+    R_[k]={in:now,out:null,breaks:[]}; setMsg(`${hm(now)} に出勤しました。`,true);
+  }else if(t==='bs'){ if(st.s!=='working') return; st.r.breaks.push({s:now,e:null}); setMsg(`${hm(now)} に休憩を開始しました。`,true);
+  }else if(t==='be'){ if(st.s!=='break') return; st.r.breaks.at(-1).e=now; setMsg(`${hm(now)} に休憩を終了しました。`,true);
+  }else if(t==='out'){
+    if(st.s==='off') return;
+    if(st.s==='break') st.r.breaks.at(-1).e=now;
+    st.r.out=now; setMsg(`${hm(now)} に退勤しました。今日の勤務時間は ${dur(calc(st.r).work)} です。`,true);
+  }
+  if(await save()) autoHome=Date.now()+6000;
+  render();
+}
+function goHome(keepMsg=false){screen='home';me=null;pinFor=null;pinBuf='';autoHome=0;armed=null;pinEditId=null;closeEdit();if(!keepMsg)setMsg('');render();}
+
+async function pinKey(v){
+  if(Date.now()<lockUntil) return;
+  pinBuf+=v; pinErr=''; render();
+  if(pinBuf.length<4) return;
+  const want=pinFor.type==='admin'?data.adminPin:(data.staff.find(s=>s.id===pinFor.id)||{}).pin;
+  const got=await hash((pinFor.type==='admin'?'admin':pinFor.id)+':'+pinBuf);
+  pinBuf='';
+  if(got===want){
+    fails=0; setMsg('');
+    if(pinFor.type==='admin'){screen='admin';adminTab=data.staff.length?'sheet':'staff';}
+    else{screen='staff';me=pinFor.id;view=new Date();view.setDate(1);}
+  }else{
+    fails++; pinErr='PINが違います。';
+    if(fails>=5){lockUntil=Date.now()+30000;fails=0;}
+  }
+  render();
+}
+const validPin=p=>/^\d{4}$/.test(p);
+
+async function addStaff(){
+  const name=$('nName').value.trim(), p=$('nPin').value;
+  if(!name){setMsg('名前を入力してください。');return render();}
+  if(!validPin(p)){setMsg('PINは数字4桁で入力してください。');return render();}
+  const id='s'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+  data.staff.push({id,name,pin:await hash(id+':'+p)});
+  let extra='';
+  if(data.legacy){data.records[id]=data.legacy;delete data.legacy;extra='以前の打刻記録を引き継ぎました。';}
+  if(await save()) setMsg(`${name}さんを追加しました。${extra}`,true);
+  render();
+}
+
+/* ---------- edit (admin) ---------- */
+function toTs(k,v,base){
+  if(!v) return null;
+  const [h,mi]=v.split(':').map(Number), d=keyDate(k); d.setHours(h,mi,0,0);
+  let t=d.getTime(); if(base!=null&&t<base) t+=86400000; return t;
+}
+function addBreakRow(s='',e=''){
+  const row=document.createElement('div'); row.className='brow';
+  row.innerHTML=`<input type="time" class="bs" value="${s}" aria-label="休憩開始"><span>〜</span><input type="time" class="be" value="${e}" aria-label="休憩終了"><button class="x" type="button">削除</button>`;
+  row.querySelector('.x').onclick=()=>row.remove();
+  $('eBreaks').appendChild(row);
+}
+function openEdit(sid,k){
+  edit={sid,k}; const r=recs(sid)[k], d=keyDate(k);
+  $('eTitle').textContent=`${staffName(sid)}　${d.getMonth()+1}月${d.getDate()}日（${WD[d.getDay()]}）の打刻`;
+  $('eIn').value=r?.in?hm(r.in):''; $('eOut').value=r?.out?hm(r.out):'';
+  $('eBreaks').innerHTML=''; (r?.breaks||[]).forEach(b=>addBreakRow(hm(b.s),b.e?hm(b.e):''));
+  $('eDel').style.display=r?'':'none'; $('eErr').textContent='';
+  $('ov').classList.add('open'); $('eIn').focus();
+}
+function closeEdit(){$('ov').classList.remove('open');edit=null;}
+async function saveEdit(){
+  const {sid,k}=edit, err=t=>{$('eErr').textContent=t;};
+  const inTs=toTs(k,$('eIn').value,null); if(inTs==null) return err('出勤時刻を入力してください。');
+  const outTs=toTs(k,$('eOut').value,inTs), breaks=[];
+  for(const row of $('eBreaks').querySelectorAll('.brow')){
+    const s=toTs(k,row.querySelector('.bs').value,inTs); if(s==null) continue;
+    const e=toTs(k,row.querySelector('.be').value,s);
+    if(outTs!=null&&(e==null||e>outTs||s>outTs)) return err('休憩は出勤〜退勤の間に収まるよう入力してください。');
+    breaks.push({s,e});
+  }
+  breaks.sort((a,b)=>a.s-b.s);
+  if(breaks.some((b,i)=>!b.e&&i<breaks.length-1)) return err('終了時刻のない休憩は最後の1件だけにしてください。');
+  if(outTs==null){const o=openRec(sid); if(o&&o.key!==k) return err(`${o.key} が勤務中のままです。先にそちらの退勤を入力してください。`);}
+  recs(sid)[k]={in:inTs,out:outTs,breaks};
+  if(await save()) setMsg('打刻を修正しました。',true);
+  closeEdit(); render();
+}
+async function delEdit(){delete recs(edit.sid)[edit.k]; if(await save()) setMsg('この日の記録を削除しました。',true); closeEdit(); render();}
+
+/* ---------- export ---------- */
+function buildSheet(sid){
+  const y=view.getFullYear(), m=view.getMonth(), D=86400000, now=Date.now();
+  const head=['日付','曜日','出勤(打刻)','出勤(計算)','退勤(打刻)','退勤(計算)','休憩内訳(打刻)','休憩時間','勤務時間','勤務時間(時間)'];
+  const aoa=[[`${staffName(sid)}　${y}年${m+1}月 勤務表`],[ruleText()],head];
+  let tw=0,tb=0,days=0; const fr=[];
+  monthRows(sid).forEach(({dt,r})=>{
+    const date=`${y}/${pad(m+1)}/${pad(dt.getDate())}`;
+    const c=calc(r,now);
+    if(!c){aoa.push([date,WD[dt.getDay()],'','','','','','','','']);return;}
+    const detail=(r.breaks||[]).map(b=>`${hm(b.s)}-${b.e?hm(b.e):''}`).join(' / ');
+    if(!c.open){tw+=c.work;tb+=c.br;days++;}
+    fr.push(aoa.length);
+    aoa.push([date,WD[dt.getDay()],hm(r.in),hm(c.a),c.open?'未退勤':hm(r.out),c.open?'':hm(c.z),detail,
+      c.open?'':c.br/D, c.open?'':c.work/D, c.open?'':Math.round(c.work/36000)/100]);
+  });
+  aoa.push([]); const tot=aoa.length;
+  aoa.push(['合計',`${days}日`,'','','','','',tb/D,tw/D,Math.round(tw/36000)/100]);
+  const ws=XLSX.utils.aoa_to_sheet(aoa);
+  const z=(r,c,f)=>{const a=XLSX.utils.encode_cell({r,c});if(ws[a]&&typeof ws[a].v==='number')ws[a].z=f;};
+  [...fr,tot].forEach(r=>{z(r,7,'[h]:mm');z(r,8,'[h]:mm');z(r,9,'0.00');});
+  ws['!cols']=[{wch:12},{wch:5},{wch:10},{wch:10},{wch:10},{wch:10},{wch:26},{wch:9},{wch:9},{wch:13}];
+  ws['!merges']=[{s:{r:0,c:0},e:{r:0,c:9}},{s:{r:1,c:0},e:{r:1,c:9}}];
+  return {ws,days,tw,tb};
+}
+function sheetName(n,used){let s=n.replace(/[\[\]:*?\/\\]/g,'').slice(0,28)||'スタッフ',t=s,i=2;while(used.has(t))t=`${s}(${i++})`;used.add(t);return t;}
+function doExport(ids){
+  if(typeof XLSX==='undefined'){setMsg('Excel出力の読み込みに失敗しました。通信状況を確認して再度お試しください。');return render();}
+  const y=view.getFullYear(), m=view.getMonth(), D=86400000, wb=XLSX.utils.book_new(), used=new Set(['集計']);
+  const built=ids.map(id=>({id,...buildSheet(id)}));
+  if(ids.length>1){
+    const aoa=[[`${y}年${m+1}月 勤務集計`],[ruleText()],['名前','勤務日数','勤務時間','休憩時間','勤務時間(時間)']];
+    built.forEach(b=>aoa.push([staffName(b.id),b.days,b.tw/D,b.tb/D,Math.round(b.tw/36000)/100]));
+    const ws=XLSX.utils.aoa_to_sheet(aoa);
+    for(let r=3;r<aoa.length;r++){['C','D'].forEach(c=>{const a=c+(r+1);if(ws[a])ws[a].z='[h]:mm';});const e='E'+(r+1);if(ws[e])ws[e].z='0.00';}
+    ws['!cols']=[{wch:14},{wch:9},{wch:10},{wch:10},{wch:13}];
+    XLSX.utils.book_append_sheet(wb,ws,'集計');
+  }
+  built.forEach(b=>XLSX.utils.book_append_sheet(wb,b.ws,sheetName(staffName(b.id),used)));
+  const fname=ids.length>1?`勤務表_全員_${y}-${pad(m+1)}.xlsx`:`勤務表_${staffName(ids[0])}_${y}-${pad(m+1)}.xlsx`;
+  XLSX.writeFile(wb,fname);
+  setMsg(`${fname} を出力しました。`,true); render();
+}
+
+/* ---------- events ---------- */
+document.addEventListener('click',async e=>{
+  const el=e.target.closest('[data-act]'); if(!el||el.tagName==='SELECT') return;
+  const a=el.dataset.act, id=el.dataset.id;
+  if(a!=='delStaff'&&a!=='restoreGo'&&armed){armed=null;pendingRestore=null;}
+  switch(a){
+    case 'setup':{
+      const p1=$('sp1').value,p2=$('sp2').value;
+      if(!validPin(p1)){setMsg('PINは数字4桁で入力してください。');return render();}
+      if(p1!==p2){setMsg('2回の入力が一致しません。');return render();}
+      data.adminPin=await hash('admin:'+p1);
+      if(await save()){setMsg('');screen='admin';adminTab='staff';}
+      return render();}
+    case 'pick': pinFor={type:'staff',id}; pinBuf='';pinErr='';setMsg('');autoHome=0;screen='pin'; return render();
+    case 'admin': pinFor={type:'admin'}; pinBuf='';pinErr='';setMsg('');screen='pin'; return render();
+    case 'key': return pinKey(el.dataset.v);
+    case 'bksp': pinBuf=pinBuf.slice(0,-1); return render();
+    case 'cancel': return goHome();
+    case 'logout': return goHome();
+    case 'punch': return punch(el.dataset.t);
+    case 'mprev': view.setMonth(view.getMonth()-1); return render();
+    case 'mnext': view.setMonth(view.getMonth()+1); return render();
+    case 'tab': adminTab=el.dataset.v; setMsg(''); pinEditId=null; pendingRestore=null; return render();
+    case 'row': return openEdit(adminSid,el.dataset.k);
+    case 'export1': return doExport([adminSid]);
+    case 'exportAll': return doExport(data.staff.map(s=>s.id));
+    case 'addStaff': return addStaff();
+    case 'backupOut': return backupOut();
+    case 'restoreGo':{ if(!pendingRestore) return; data=pendingRestore; pendingRestore=null; armed=null;
+      if(await save()) setMsg('バックアップから記録を戻しました。',true); return render(); }
+    case 'pinEdit': pinEditId=id; render(); $('np')?.focus(); return;
+    case 'pinCancel': pinEditId=null; return render();
+    case 'pinSave':{
+      const p=$('np').value; if(!validPin(p)){setMsg('PINは数字4桁で入力してください。');return render();}
+      data.staff.find(s=>s.id===id).pin=await hash(id+':'+p); pinEditId=null;
+      if(await save()) setMsg(`${staffName(id)}さんのPINを変更しました。`,true); return render();}
+    case 'delStaff':{
+      if(armed!=='del'+id){armed='del'+id;clearTimeout(armT);armT=setTimeout(()=>{armed=null;render();},4000);return render();}
+      const n=staffName(id); armed=null; data.staff=data.staff.filter(s=>s.id!==id); delete data.records[id];
+      if(await save()) setMsg(`${n}さんと記録を削除しました。`,true); return render();}
+    case 'adminPin':{
+      const p1=$('ap1').value,p2=$('ap2').value;
+      if(!validPin(p1)){setMsg('PINは数字4桁で入力してください。');return render();}
+      if(p1!==p2){setMsg('2回の入力が一致しません。');return render();}
+      data.adminPin=await hash('admin:'+p1); if(await save()) setMsg('管理者PINを変更しました。',true); return render();}
+  }
+});
+document.addEventListener('change',async e=>{
+  const el=e.target; if(!el.dataset||!el.dataset.act) return;
+  if(el.dataset.act==='asel'){adminSid=el.value;return render();}
+  if(el.dataset.act==='backupIn'){ if(el.files&&el.files[0]) backupIn(el.files[0]); return; }
+  if(el.dataset.act==='rule'){data.rules[el.dataset.k]=el.dataset.k==='unit'?+el.value:el.value; if(await save()) setMsg('ルールを保存しました。',true); render();}
+});
+document.addEventListener('keydown',e=>{
+  if(e.key==='Enter'){const tr=e.target.closest?.('tr.row'); if(tr) openEdit(adminSid,tr.dataset.k);}
+  if(e.key==='Escape'&&edit) closeEdit();
+  if(screen==='pin'){ if(/^\d$/.test(e.key)) pinKey(e.key); else if(e.key==='Backspace'){pinBuf=pinBuf.slice(0,-1);render();} }
+});
+['pointerdown','keydown'].forEach(t=>document.addEventListener(t,()=>{lastAct=Date.now(); if(screen==='staff') autoHome=0;},true));
+$('eAdd').onclick=()=>addBreakRow(); $('eCancel').onclick=closeEdit; $('eSave').onclick=saveEdit; $('eDel').onclick=delEdit;
+$('ov').addEventListener('click',e=>{if(e.target.id==='ov')closeEdit();});
+
+function tick(){
+  const n=new Date();
+  $('date').textContent=`${n.getFullYear()}年${n.getMonth()+1}月${n.getDate()}日（${WD[n.getDay()]}）`;
+  $('time').innerHTML=`${pad(n.getHours())}:${pad(n.getMinutes())}<small>${pad(n.getSeconds())}</small>`;
+  const idle=Date.now()-lastAct;
+  if(screen==='staff'&&autoHome&&Date.now()>autoHome) return goHome(true);
+  if((screen==='staff'||screen==='pin')&&idle>60000) return goHome();
+  if(screen==='admin'&&idle>180000) return goHome();
+  if(screen==='pin'&&lockUntil&&Date.now()<lockUntil+1000) renderPin();
+  if(screen==='staff'&&n.getSeconds()===0) renderStaff();
+}
+tick(); setInterval(tick,1000); load();
+</script>
+</body>
+</html>
